@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String?
+  avatar          String?
+  googleId        String    @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  slackAccessToken String?
+  slackTeamId      String?
+  slackTeamName    String?
+  slackUserId      String?
+  slackWebhookUrl  String?
+
+  emailJobs EmailJob[]
+}
+
+model EmailJob {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recipientEmail  String
+  senderEmail     String
+  subject         String
+  body            String
+
+  status          String   @default("scheduled") // scheduled, sending, sent, failed, rate_limited
+  scheduledAt     DateTime
+  sentAt          DateTime?
+  errorMessage    String?
+
+  bullmqJobId     String?  @unique
+  idempotencyKey  String   @unique
+
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([recipientEmail])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+model Campaign {
+  id              String    @id @default(uuid())
+  userId          String
+  name            String?
+  settings        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  emailJobs       EmailJob[]
+}
