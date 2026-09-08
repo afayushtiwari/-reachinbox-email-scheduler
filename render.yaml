@@ -7,20 +7,27 @@ services:
     rootDir: .
     buildCommand: |
       cd frontend && npm ci && npm run build
-      cd ../backend && npm ci && npx prisma generate && npm run build
+      cd ../backend && npm ci && npx prisma db push && npx prisma generate && npm run build
     startCommand: cd backend && npm start
     envVars:
       - key: PORT
         value: 10000
+        sync: false
       - key: FRONTEND_URL
         value: "true"
+        sync: false
       - key: JWT_SECRET
-        value: change_this_to_a_long_random_string
+        value: ""
+        sync: false
       - key: DATABASE_URL
-        value: "postgresql://PLACEHOLDER"
+        value: ""
+        sync: false
       - key: REDIS_URL
-        value: "redis://PLACEHOLDER"
+        value: ""
+        sync: false
       - key: GOOGLE_CLIENT_ID
         value: "659048347978-14t6j2hgq4itojpcenlg6khjo2i3sjpq.apps.googleusercontent.com"
+        sync: false
       - key: GOOGLE_CLIENT_SECRET
-        value: "REPLACE_WITH_NEW_SECRET"
+        value: ""
+        sync: false
