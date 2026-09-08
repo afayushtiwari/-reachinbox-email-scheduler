@@ -248,7 +248,7 @@ npm run dev               # http://localhost:3000
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/email_scheduler` | Postgres DSN |
-| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis connection |
+| `REDIS_URL` | empty | Managed/TLS Redis URL (hosted deploys); else uses `REDIS_HOST`/`REDIS_PORT` |
 | `ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch node |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
@@ -260,6 +260,29 @@ npm run dev               # http://localhost:3000
 | `PORT` | `4000` | API port |
 | `FRONTEND_URL` | `http://localhost:3000` | Allowed CORS + OAuth redirect |
 | `JWT_SECRET` | dev default | Token signing secret |
+
+---
+
+## 🚀 Hosting (single-service deploy)
+
+The app can run as **one** service: the Express backend both serves the `/api` routes **and** the statically-exported Next.js frontend, so there is a single origin and no CORS issues.
+
+- Frontend uses `output: "export"` (`next.config.js`) → produces `frontend/out/`.
+- The backend serves `frontend/out/` as static files and falls back to `index.html` for non-API GET routes (`backend/src/index.ts`).
+- `NEXT_PUBLIC_API_URL` can be **empty** → the browser calls same-origin `/api/*`.
+
+### Deploy (Render free tier)
+1. Sign up at **Neon** (Postgres) and **Upstash** (Redis). Copy the `DATABASE_URL` (postgres) and `REDIS_URL` (rediss://…, TLS).
+2. In Render: **New → Web Service** → connect this repo (root directory: repo root). A `render.yaml` is included with the build/start commands.
+3. Build: it runs `frontend` static build, then `backend` install + prisma generate + build.
+4. Start: `npm start` in `backend/` runs the compiled Express server (API + scheduler + worker + static frontend).
+5. Set env vars: `DATABASE_URL`, `REDIS_URL`, `FRONTEND_URL=true` (reflect origin), `JWT_SECRET`, and the Google OAuth vars.
+6. Add your Render URL to the Google OAuth client's **Authorized JavaScript origins**.
+
+> ⚠️ **Hosted trade-offs:** Elasticsearch and Slack are absent by default on a single free service (all their calls degrade gracefully and are logged, never fatal). On Render's free plan the service spins down after ~15 min idle and wakes on the next visit, so scheduled sends fire only while the service is awake — fine for demoing persistence, not for guaranteed background delivery.
+
+### Local development (unchanged)
+Run `npm run dev` in `backend/` and `frontend/` separately as described below.
 
 ---
 

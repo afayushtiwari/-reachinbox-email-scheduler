@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: reachinbox-email-scheduler
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: .
+    buildCommand: |
+      cd frontend && npm ci && npm run build
+      cd ../backend && npm ci && npx prisma generate && npm run build
+    startCommand: cd backend && npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        value: "true"
+      - key: JWT_SECRET
+        value: change_this_to_a_long_random_string
+      - key: DATABASE_URL
+        value: "postgresql://PLACEHOLDER"
+      - key: REDIS_URL
+        value: "redis://PLACEHOLDER"
+      - key: GOOGLE_CLIENT_ID
+        value: "659048347978-14t6j2hgq4itojpcenlg6khjo2i3sjpq.apps.googleusercontent.com"
+      - key: GOOGLE_CLIENT_SECRET
+        value: "REPLACE_WITH_NEW_SECRET"

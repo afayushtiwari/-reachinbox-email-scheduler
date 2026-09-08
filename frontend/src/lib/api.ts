@@ -10,7 +10,7 @@ import {
   SlackStatus,
 } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 let authToken: string | null = null;
 

@@ -3,6 +3,8 @@ dotenv.config();
 
 import express from "express";
 import cors from "cors";
+import path from "path";
+import fs from "fs";
 import { config } from "./config";
 import prisma from "./services/prisma";
 import { getRedisConnection } from "./services/redis";
@@ -17,7 +19,7 @@ import queueRoutes from "./routes/queue";
 const app = express();
 
 app.use(cors({
-  origin: config.frontendUrl,
+  origin: config.frontendUrl === "true" ? true : config.frontendUrl,
   credentials: true,
 }));
 app.use(express.json({ limit: "10mb" }));
@@ -37,6 +39,27 @@ app.get("/api/health", async (_req, res) => {
     res.status(503).json({ status: "unhealthy", error: error.message });
   }
 });
+
+// Serve the static frontend build (if present) for single-service hosting
+const frontendOut = path.resolve(__dirname, "../../frontend/out");
+if (fs.existsSync(frontendOut)) {
+  app.use(express.static(frontendOut));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) {
+      return next();
+    }
+    // Map clean URLs (e.g. /login -> login.html) like a static host would.
+    const cleanPath = req.path.replace(/\/+$/, "") || "/";
+    const htmlFile = path.join(frontendOut, `${cleanPath}.html`);
+    if (fs.existsSync(htmlFile) && fs.statSync(htmlFile).isFile()) {
+      return res.sendFile(htmlFile);
+    }
+    res.sendFile(path.join(frontendOut, "index.html"));
+  });
+  console.log("Serving frontend from:", frontendOut);
+} else {
+  console.log("Frontend build not found, API only mode:", frontendOut);
+}
 
 async function startServer() {
   try {
