@@ -5,11 +5,19 @@ let redisConnection: Redis | null = null;
 
 export function getRedisConnection(): Redis {
   if (!redisConnection) {
-    redisConnection = new Redis({
-      host: config.redis.host,
-      port: config.redis.port,
-      maxRetriesPerRequest: null,
-    });
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+      redisConnection = new Redis(redisUrl, {
+        maxRetriesPerRequest: null,
+        tls: redisUrl.startsWith("rediss://") ? {} : undefined,
+      });
+    } else {
+      redisConnection = new Redis({
+        host: config.redis.host,
+        port: config.redis.port,
+        maxRetriesPerRequest: null,
+      });
+    }
 
     redisConnection.on("error", (err) => {
       console.error("Redis connection error:", err);
