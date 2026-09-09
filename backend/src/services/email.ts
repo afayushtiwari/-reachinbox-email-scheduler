@@ -140,7 +140,8 @@ async function sendEmailViaMailtrap(options: {
       const detail = Array.isArray((data as any).errors)
         ? (data as any).errors.map((e: any) => e.message || e).join(", ")
         : (data as any).message || `HTTP ${res.status}`;
-      return { success: false, error: detail };
+      console.error(`Mailtrap send failed: HTTP ${res.status} ${detail}`);
+      return { success: false, error: `Mailtrap HTTP ${res.status}: ${detail}` };
     }
 
     const messageId = Array.isArray((data as any).message_ids) ? (data as any).message_ids[0] : undefined;
