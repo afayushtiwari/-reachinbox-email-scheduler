@@ -7,20 +7,28 @@ interface EtherealAccount {
   smtp: { host: string; port: number; secure: boolean };
 }
 
+const SMTP_TIMEOUTS = {
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 30000,
+};
+
 let transporter: nodemailer.Transporter | null = null;
 
 async function getTransporter(): Promise<nodemailer.Transporter> {
   if (transporter) return transporter;
 
   if (config.smtp.user && config.smtp.pass && config.smtp.user !== "auto_generated") {
+    console.log(`Using configured SMTP: ${config.smtp.host}:${config.smtp.port}`);
     transporter = nodemailer.createTransport({
       host: config.smtp.host,
       port: config.smtp.port,
-      secure: false,
+      secure: config.smtp.port === 465,
       auth: {
         user: config.smtp.user,
         pass: config.smtp.pass,
       },
+      ...SMTP_TIMEOUTS,
     });
     return transporter;
   }
@@ -38,6 +46,7 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
       user: testAccount.user,
       pass: testAccount.pass,
     },
+    ...SMTP_TIMEOUTS,
   });
 
   return transporter;

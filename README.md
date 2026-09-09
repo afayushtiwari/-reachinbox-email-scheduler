@@ -252,7 +252,7 @@ npm run dev               # http://localhost:3000
 | `ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch node |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
-| `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated | SMTP credentials |
+| `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated Ethereal | Any SMTP provider; on hosted deploys (Render) Ethereal is often unreachable, so set these to a real SMTP (e.g. Gmail app password, SendGrid, Brevo, Resend). Port 465 → TLS, else STARTTLS. |
 | `MAX_EMAILS_PER_HOUR` | `200` | Global hourly cap |
 | `MAX_EMAILS_PER_HOUR_PER_SENDER` | `50` | Per-sender hourly cap |
 | `MIN_DELAY_BETWEEN_EMAILS_MS` | `2000` | Min delay between sends |
@@ -297,6 +297,7 @@ Run `npm run dev` in `backend/` and `frontend/` separately as described below.
 
 ## 🐛 Troubleshooting
 
+- **"Email sent to X: Connection timeout"** → Ethereal SMTP is unreachable from your host (common on Render). Configure `ETHEREAL_HOST/PORT/USER/PASS` with a real SMTP provider, or run locally where Ethereal works.
 - **"Redis connection error"** → is `docker compose up -d` running Redis?
 - **"Table X does not exist"** → run `npx prisma db push` in `backend/`.
 - **Elasticsearch down** → emails still work; only search + indexing are degraded (errors logged, not fatal).
