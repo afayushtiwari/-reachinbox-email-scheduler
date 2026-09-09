@@ -118,12 +118,19 @@ async function sendEmailViaMailtrap(options: {
   subject: string;
   html: string;
 }): Promise<{ success: boolean; messageId?: string; previewUrl?: string; error?: string }> {
+  if (!config.httpMail.sandboxId) {
+    const err = "MAILTRAP_SANDBOX_ID is not set (sandbox API requires /api/send/{sandbox_id})";
+    console.error(err);
+    return { success: false, error: err };
+  }
+
   try {
     const res = await fetch(config.httpMail.url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.httpMail.token}`,
         "Content-Type": "application/json",
+        "User-Agent": "reachinbox-email-scheduler",
       },
       body: JSON.stringify({
         from: { email: options.from },
@@ -138,7 +145,7 @@ async function sendEmailViaMailtrap(options: {
 
     if (!res.ok) {
       const detail = Array.isArray((data as any).errors)
-        ? (data as any).errors.map((e: any) => e.message || e).join(", ")
+        ? (data as any).errors.map((e: any) => (typeof e === "string" ? e : e.message || e)).join(", ")
         : (data as any).message || `HTTP ${res.status}`;
       console.error(`Mailtrap send failed: HTTP ${res.status} ${detail}`);
       return { success: false, error: `Mailtrap HTTP ${res.status}: ${detail}` };

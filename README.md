@@ -253,7 +253,7 @@ npm run dev               # http://localhost:3000
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
 | `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated Ethereal | SMTP provider (used locally). Ethereal works fine in local dev. |
-| `MAILTRAP_API_TOKEN` / `MAILTRAP_API_URL` | empty / default | **Use on hosted deploys (Render)** — Render blocks outbound SMTP (port 587), so sends go via the Mailtrap Testing HTTP API instead (works over 443). Emails land in your Mailtrap inbox (like an Ethereal preview). Get the inbox token from Mailtrap → Email Testing → your inbox → Settings → **API Tokens**. |
+| `MAILTRAP_API_TOKEN` / `MAILTRAP_SANDBOX_ID` | empty | **Use on hosted deploys (Render)** — Render blocks outbound SMTP (port 587), so sends go via the Mailtrap Sandbox HTTP API instead (works over 443). Emails land in your Mailtrap sandbox (like an Ethereal preview). Set the token from Sandboxes → API Tokens (enable **Email Sending**), and the sandbox ID from the sandbox's **Integration** tab (the number in `sandbox.smtp.mailtrap.io/{sandbox_id}`). |
 | `MAX_EMAILS_PER_HOUR` | `200` | Global hourly cap |
 | `MAX_EMAILS_PER_HOUR_PER_SENDER` | `50` | Per-sender hourly cap |
 | `MIN_DELAY_BETWEEN_EMAILS_MS` | `2000` | Min delay between sends |

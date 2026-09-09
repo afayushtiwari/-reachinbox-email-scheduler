@@ -39,7 +39,10 @@ export const config = {
 
   httpMail: {
     token: process.env.MAILTRAP_API_TOKEN || "",
-    url: process.env.MAILTRAP_API_URL || "https://send.api.mailtrap.io/api/send",
+    sandboxId: process.env.MAILTRAP_SANDBOX_ID || "",
+    url:
+      process.env.MAILTRAP_API_URL ||
+      `https://sandbox.api.mailtrap.io/api/send/${process.env.MAILTRAP_SANDBOX_ID || ""}`,
   },
 
   rateLimiting: {
