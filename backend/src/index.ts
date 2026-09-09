@@ -11,6 +11,7 @@ import { getRedisConnection } from "./services/redis";
 import { initializeElasticsearch } from "./services/elasticsearch";
 import { ensureQueueScheduler, recoverOrphanedJobs } from "./services/bullmq";
 import { startWorker } from "./worker/email.worker";
+import { probeConnectivity } from "./services/email";
 import authRoutes from "./routes/auth";
 import emailRoutes from "./routes/emails";
 import slackRoutes from "./routes/slack";
@@ -70,6 +71,9 @@ async function startServer() {
     console.log("Connecting to Redis...");
     getRedisConnection();
     console.log("Redis connected");
+
+    console.log("Probing outbound connectivity...");
+    await probeConnectivity();
 
     console.log("Initializing Elasticsearch...");
     await initializeElasticsearch();

@@ -1,4 +1,7 @@
 import nodemailer from "nodemailer";
+import dns from "dns";
+import net from "net";
+import https from "https";
 import { config } from "../config";
 
 interface EtherealAccount {
@@ -12,6 +15,58 @@ const SMTP_TIMEOUTS = {
   greetingTimeout: 10000,
   socketTimeout: 30000,
 };
+
+const lookupIPv4 = (
+  hostname: string,
+  options: dns.LookupOptions,
+  callback: (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family: number) => void,
+) => {
+  dns.lookup(hostname, { ...options, family: 4 }, callback);
+};
+
+export function probeConnectivity(): Promise<void> {
+  const { host, port } = config.smtp;
+  return new Promise((resolve) => {
+    let pending = 3;
+    const finish = () => {
+      pending -= 1;
+      if (pending === 0) resolve();
+    };
+
+    const probeTcp = (family: number) => {
+      const socket = net.connect({ host, port, family, timeout: 6000 });
+      const label = family === 4 ? "IPv4" : "IPv6";
+      socket.once("connect", () => {
+        console.log(`  TCP ${host}:${port} [${label}]: OK`);
+        socket.destroy();
+      });
+      socket.once("timeout", () => {
+        console.log(`  TCP ${host}:${port} [${label}]: TIMEOUT`);
+        socket.destroy();
+      });
+      socket.once("error", (err: Error) => {
+        console.log(`  TCP ${host}:${port} [${label}]: ${err.message}`);
+      });
+      socket.on("close", finish);
+    };
+
+    probeTcp(4);
+    probeTcp(6);
+
+    const req = https.get("https://api.resend.com", { timeout: 6000 }, (res) => {
+      console.log(`  TCP https://api.resend.com:443 [TLS]: OK (${res.statusCode})`);
+      res.destroy();
+    });
+    req.on("timeout", () => {
+      console.log("  TCP https://api.resend.com:443 [TLS]: TIMEOUT");
+      req.destroy();
+    });
+    req.on("error", (err: Error) => {
+      console.log(`  TCP https://api.resend.com:443 [TLS]: ${err.message}`);
+    });
+    req.on("close", finish);
+  });
+}
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -28,8 +83,9 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
         user: config.smtp.user,
         pass: config.smtp.pass,
       },
+      lookup: lookupIPv4,
       ...SMTP_TIMEOUTS,
-    });
+    } as any);
     return transporter;
   }
 
