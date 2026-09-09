@@ -25,6 +25,10 @@ const lookupIPv4 = (
 };
 
 export function probeConnectivity(): Promise<void> {
+  console.log(
+    `Mail mode: ${config.httpMail.token ? "Mailtrap HTTP API" : "SMTP"}` +
+      (config.httpMail.token ? "" : ` (${config.smtp.host}:${config.smtp.port})`)
+  );
   const { host, port } = config.smtp;
   return new Promise((resolve) => {
     let pending = 3;
@@ -108,12 +112,55 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
   return transporter;
 }
 
+async function sendEmailViaMailtrap(options: {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ success: boolean; messageId?: string; previewUrl?: string; error?: string }> {
+  try {
+    const res = await fetch(config.httpMail.url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.httpMail.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: { email: options.from },
+        to: [{ email: options.to }],
+        subject: options.subject,
+        html: options.html,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const detail = Array.isArray((data as any).errors)
+        ? (data as any).errors.map((e: any) => e.message || e).join(", ")
+        : (data as any).message || `HTTP ${res.status}`;
+      return { success: false, error: detail };
+    }
+
+    const messageId = Array.isArray((data as any).message_ids) ? (data as any).message_ids[0] : undefined;
+    console.log(`Email sent to ${options.to}: ${messageId || "ok"}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
 export async function sendEmail(options: {
   from: string;
   to: string;
   subject: string;
   html: string;
 }): Promise<{ success: boolean; messageId?: string; previewUrl?: string; error?: string }> {
+  if (config.httpMail.token) {
+    return sendEmailViaMailtrap(options);
+  }
+
   try {
     const transport = await getTransporter();
 

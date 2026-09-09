@@ -37,6 +37,11 @@ export const config = {
     pass: process.env.ETHEREAL_PASS || "",
   },
 
+  httpMail: {
+    token: process.env.MAILTRAP_API_TOKEN || "",
+    url: process.env.MAILTRAP_API_URL || "https://send.api.mailtrap.io/api/send",
+  },
+
   rateLimiting: {
     maxPerHourGlobal: parseInt(process.env.MAX_EMAILS_PER_HOUR || "200", 10),
     maxPerHourPerSender: parseInt(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || "50", 10),

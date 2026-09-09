@@ -252,7 +252,8 @@ npm run dev               # http://localhost:3000
 | `ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch node |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
-| `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated Ethereal | Any SMTP provider; on hosted deploys (Render) Ethereal is often unreachable, so set these to a real SMTP (e.g. Gmail app password, SendGrid, Brevo, Resend). Port 465 → TLS, else STARTTLS. |
+| `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated Ethereal | SMTP provider (used locally). Ethereal works fine in local dev. |
+| `MAILTRAP_API_TOKEN` / `MAILTRAP_API_URL` | empty / default | **Use on hosted deploys (Render)** — Render blocks outbound SMTP (port 587), so sends go via the Mailtrap Testing HTTP API instead (works over 443). Emails land in your Mailtrap inbox (like an Ethereal preview). Get the inbox token from Mailtrap → Email Testing → your inbox → Settings → **API Tokens**. |
 | `MAX_EMAILS_PER_HOUR` | `200` | Global hourly cap |
 | `MAX_EMAILS_PER_HOUR_PER_SENDER` | `50` | Per-sender hourly cap |
 | `MIN_DELAY_BETWEEN_EMAILS_MS` | `2000` | Min delay between sends |
@@ -297,7 +298,7 @@ Run `npm run dev` in `backend/` and `frontend/` separately as described below.
 
 ## 🐛 Troubleshooting
 
-- **"Email sent to X: Connection timeout"** → Ethereal SMTP is unreachable from your host (common on Render). Configure `ETHEREAL_HOST/PORT/USER/PASS` with a real SMTP provider, or run locally where Ethereal works.
+- **"Email sent to X: Connection timeout"** → outbound SMTP (port 587) is blocked on some hosts (definitely on Render free — the connectivity probe shows `TIMEOUT` while https works). Set `MAILTRAP_API_TOKEN` and sends go via the Mailtrap HTTPS API instead.
 - **"Redis connection error"** → is `docker compose up -d` running Redis?
 - **"Table X does not exist"** → run `npx prisma db push` in `backend/`.
 - **Elasticsearch down** → emails still work; only search + indexing are degraded (errors logged, not fatal).
