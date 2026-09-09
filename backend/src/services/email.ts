@@ -125,35 +125,45 @@ async function sendEmailViaMailtrap(options: {
   }
 
   try {
-    const res = await fetch(config.httpMail.url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.httpMail.token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "reachinbox-email-scheduler",
-      },
-      body: JSON.stringify({
-        from: { email: options.from },
-        to: [{ email: options.to }],
-        subject: options.subject,
-        html: options.html,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await fetch(config.httpMail.url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.httpMail.token}`,
+          "Content-Type": "application/json",
+          "User-Agent": "reachinbox-email-scheduler",
+        },
+        body: JSON.stringify({
+          from: { email: options.from },
+          to: [{ email: options.to }],
+          subject: options.subject,
+          html: options.html,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
 
-    const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({}));
 
-    if (!res.ok) {
-      const detail = Array.isArray((data as any).errors)
-        ? (data as any).errors.map((e: any) => (typeof e === "string" ? e : e.message || e)).join(", ")
-        : (data as any).message || `HTTP ${res.status}`;
-      console.error(`Mailtrap send failed: HTTP ${res.status} ${detail}`);
-      return { success: false, error: `Mailtrap HTTP ${res.status}: ${detail}` };
+      if (res.status === 429 && attempt < 4) {
+        console.log(`Mailtrap rate limited (429), retrying ${options.to} in ${1000 * (attempt + 1)}ms...`);
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+
+      if (!res.ok) {
+        const detail = Array.isArray((data as any).errors)
+          ? (data as any).errors.map((e: any) => (typeof e === "string" ? e : e.message || e)).join(", ")
+          : (data as any).message || `HTTP ${res.status}`;
+        console.error(`Mailtrap send failed: HTTP ${res.status} ${detail}`);
+        return { success: false, error: `Mailtrap HTTP ${res.status}: ${detail}` };
+      }
+
+      const messageId = Array.isArray((data as any).message_ids) ? (data as any).message_ids[0] : undefined;
+      console.log(`Email sent to ${options.to}: ${messageId || "ok"}`);
+      return { success: true, messageId };
     }
 
-    const messageId = Array.isArray((data as any).message_ids) ? (data as any).message_ids[0] : undefined;
-    console.log(`Email sent to ${options.to}: ${messageId || "ok"}`);
-    return { success: true, messageId };
+    return { success: false, error: "Mailtrap HTTP 429: rate limit persisted after retries" };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
