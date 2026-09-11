@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { googleLogin, getAuthToken, devLogin } from "@/lib/api";
+import { googleLogin, getAuthToken } from "@/lib/api";
 import toast from "react-hot-toast";
 
 declare global {
@@ -70,8 +70,6 @@ function GoogleSignInButton({ onSuccess }: { onSuccess: (idToken: string) => voi
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [devEmail, setDevEmail] = useState("");
-  const [devName, setDevName] = useState("");
 
   useEffect(() => {
     const token = getAuthToken();
@@ -88,19 +86,6 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (error: any) {
       toast.error(error.message || "Sign in failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDevLogin = async () => {
-    setLoading(true);
-    try {
-      await devLogin(devEmail || undefined, devName || undefined);
-      toast.success("Developer login successful!");
-      router.push("/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Dev login failed");
     } finally {
       setLoading(false);
     }
@@ -147,54 +132,10 @@ export default function LoginPage() {
 
             {!googleClientId && (
               <div className="bg-dark-500 rounded-lg p-4 border border-dark-400/30">
-                <h3 className="text-white font-medium text-sm mb-2">Developer Login</h3>
-                <p className="text-dark-200 text-xs mb-4">
-                  Use dev login if Google OAuth is not configured
+                <h3 className="text-white font-medium text-sm mb-2">Get Started</h3>
+                <p className="text-dark-200 text-xs">
+                  Google sign-in is not configured yet. Contact the administrator to enable sign-in.
                 </p>
-
-                <div className="space-y-3 mb-4">
-                  <input
-                    type="email"
-                    value={devEmail}
-                    onChange={(e) => setDevEmail(e.target.value)}
-                    placeholder="Email (optional)"
-                    className="w-full px-3 py-2 bg-dark-400 border border-dark-300 rounded-lg text-white placeholder-dark-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                  <input
-                    type="text"
-                    value={devName}
-                    onChange={(e) => setDevName(e.target.value)}
-                    placeholder="Name (optional)"
-                    className="w-full px-3 py-2 bg-dark-400 border border-dark-300 rounded-lg text-white placeholder-dark-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-
-                <button
-                  onClick={handleDevLogin}
-                  disabled={loading}
-                  className="w-full inline-flex items-center justify-center gap-2 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Signing in...
-                    </>
-                  ) : (
-                    "Continue as Developer"
-                  )}
-                </button>
-              </div>
-            )}
-
-            {googleClientId && (
-              <div className="text-center">
-                <button
-                  onClick={handleDevLogin}
-                  disabled={loading}
-                  className="text-dark-200 hover:text-dark-100 text-xs underline"
-                >
-                  Use developer login instead
-                </button>
               </div>
             )}
 
