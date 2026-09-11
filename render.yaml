@@ -31,3 +31,6 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         value: ""
         sync: false
+      - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
+        value: "659048347978-5799lqskfg0l2bstaut2a2m41eftclm0.apps.googleusercontent.com"
+        sync: false
