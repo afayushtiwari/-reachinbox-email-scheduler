@@ -1,194 +1,261 @@
-# 🚀 ReachInbox Email Scheduler
+# ReachInbox Email Scheduler
 
-A **production-grade email job scheduler + dashboard** built for the ReachInbox hiring assignment.
-
-Schedules emails at scale using **BullMQ + Redis** (no cron), sends via **Ethereal Email SMTP**, persists state in **PostgreSQL**, makes emails **searchable via Elasticsearch**, and exposes a clean **Next.js dashboard** with Google login and Slack notifications.
+A production-grade **email job scheduler + dashboard** built as a full-stack TypeScript monorepo. Schedule emails at scale with BullMQ + Redis (no cron), send through your choice of provider (SMTP, Mailtrap, SendGrid, Resend), persist all state in PostgreSQL, make emails searchable via Elasticsearch, and manage everything from a clean Next.js dashboard with real Google login and Slack notifications.
 
 ---
 
-## 📦 Features At A Glance
+## Table of Contents
 
-### Backend
-| Feature | Details |
-|---|---|
-| **Scheduler** | BullMQ delayed jobs (no cron) backed by Redis |
-| **Persistence** | PostgreSQL via Prisma; jobs survive restarts |
-| **Idempotency** | Unique idempotency keys + DB status checks prevent duplicate sends |
-| **Rate Limiting** | Redis-backed counters per sender + global, configurable via env |
-| **Concurrency** | Configurable BullMQ worker concurrency |
-| **Email Sending** | Nodemailer + Ethereal (fake SMTP with preview URLs) |
-| **Search** | Elasticsearch ingestion + full-text search API |
-| **Slack Alerts** | Real OAuth connect flow + instant `.postMessage` on rate-limit hit |
-| **Queue Dashboard** | Live BullMQ stats endpoint (waiting/active/delayed/completed/failed) |
-
-### Frontend
-| Feature | Details |
-|---|---|
-| **Google Login** | Real Google OAuth (Google Identity Services), avatar + name in header, logout |
-| **Dashboard** | Stats cards (total/scheduled/sent/failed) + live queue status + Slack panel |
-| **Compose Modal** | Subject, body, CSV/TXT upload with email detection count, start time, delay, hourly limit |
-| **Scheduled Table** | Recipient, subject, scheduled time, status, cancel action, loading + empty states |
-| **Sent Table** | Recipient, subject, sent time, status (sent/failed), loading + empty states |
-| **Search** | Elasticsearch-backed search box on scheduled & sent pages |
-| **Design** | Clean dark UI, reusable components, TypeScript throughout |
+- [What it does](#what-it-does)
+- [What has been built](#what-has-been-built)
+- [Recent security hardening](#recent-security-hardening)
+- [Feature roadmap](#feature-roadmap)
+- [Technologies used](#technologies-used)
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Environment variables](#environment-variables)
+- [Mail providers](#mail-providers)
+- [API reference](#api-reference)
+- [How it helps](#how-it-helps)
 
 ---
 
-## 🏗 Architecture
+## What it does
+
+1. **Schedule** campaign emails (arbitrary recipients, subject, body, start time, per-recipient delay, hourly cap) from a compose modal, CSV/TXT upload, or the REST API.
+2. **Queue** each recipient as a BullMQ delayed job (no cron anywhere) so emails fire exactly at their stored `scheduledAt`.
+3. **Send** them through your configured provider with rate limiting per sender + globally, min-gap between sends, and infinite auto-reschedule across hour windows instead of hard failures.
+4. **Persist** every job in PostgreSQL; on restart, jobs are recovered and re-enqueued — nothing is lost and nothing is double-sent (idempotency keys + DB state guards).
+5. **Search and monitor** sent/scheduled emails via Elasticsearch and a live BullMQ queue dashboard.
+
+---
+
+## What has been built
+
+### Backend (`backend/`)
+- Express + TypeScript REST API (auth, emails, Slack, queue stats, search).
+- **BullMQ + Redis scheduler** — delayed jobs, QueueScheduler, worker with configurable concurrency.
+- **PostgreSQL via Prisma** — `EmailJob` persistence, restart recovery (`recoverOrphanedJobs`), idempotency.
+- **Redis-backed rate limiting** — global + per-sender hourly counters, min-delay enforcement.
+- **Mail provider abstraction** — pluggable senders: SMTP/Ethereal, Mailtrap HTTP API, SendGrid HTTP API, Resend HTTP API (auto-detect or explicit `MAIL_PROVIDER`).
+- **Elasticsearch ingestion + full-text search** for scheduled/sent emails.
+- **Slack OAuth + notifications** on rate-limit events.
+- **Google OAuth (server-side)** — ID token verification via `google-auth-library`, JWT issuance.
+- **Outbound connectivity probe** at boot for hosted-deploy debugging.
+
+### Frontend (`frontend/`)
+- Next.js 14 + Tailwind + TypeScript.
+- **Google Login** (Google Identity Services) with name/avatar/logout; Developer Login fallback for dev.
+- **Dashboard** — stats cards, live queue status, Slack connect panel.
+- **Compose modal** — CSV/TXT upload with email detection + count, start time, per-recipient delay, hourly limit.
+- **Scheduled & Sent tables** — pagination, cancel scheduled jobs, loading/empty states.
+- **Search box** — Elasticsearch-backed, works on both tables.
+- Error handling via toasts, reusable typed components.
+
+---
+
+## Recent security hardening
+
+> Applied during the Google Cloud Trust & Safety alert (exposed OAuth client secret).
+
+- **Rotated the Google OAuth client** — old client deleted, fresh client (ID `6590...-5799lqskf...`) created; the leaked `GOOGLE_CLIENT_SECRET` is inactive.
+- **Scrubbed the secret from git history** — rewrote the full git history with `filter-branch` + force-pushed, then purged reflogs/GC so the secret value no longer exists in any reachable commit.
+- **`render.yaml` hardened** — real values never live in the repo; `sync: false` env vars with empty values are set in the Render dashboard instead. `NEXT_PUBLIC_GOOGLE_CLIENT_ID` added so builds always bake the correct client ID.
+- **Credentials policy enforced** —
+  - Committed: `render.yaml` (public config + public client ID), `.env.example` (placeholders only), Dockerfile, infra config.
+  - Never committed: `backend/.env`, secrets (`GOCSPX-*`, API keys) — Render dashboard + local `.env` only.
+- **`.gitignore`** excludes `.env` / `.env.local` / `.env.production`.
+
+### Why this matters
+An OAuth client secret found in a public repo lets anyone impersonate your app's Google login. The client ID, by design, is public (it is sent to the browser on every OAuth request) — it is safe to commit. Secrets are not.
+
+---
+
+## Feature roadmap
+
+Suggested order of attack to take this from assignment to product:
+
+1. **Mail provider abstraction** — done. SendGrid/Resend/SMTP/Mailtrap behind one interface.
+2. **Templates + variables** (`{{firstName}}`, `{{link}}`) with react-email/MJML editor — makes it usable for marketing sends.
+3. **Webhooks + REST API keys** — external eventing (scheduled/sent/failed) and programmatic scheduling.
+4. **Workspaces/orgs with roles** — multi-tenant, sellable.
+5. **Recurring schedules** — daily/weekly digests via repeatable BullMQ jobs (still no cron).
+6. **Analytics** — open/click tracking pixel, best-time-to-send, deliverability reports.
+7. **Auto-sequences / drips** and audience segments/tags.
+
+---
+
+## Technologies used
+
+| Layer | Tech |
+|---|---|
+| Language | TypeScript throughout |
+| Backend | Node.js, Express |
+| Scheduler | BullMQ 4 + Redis (QueueScheduler, delayed jobs, workers) |
+| Database | PostgreSQL 15, Prisma 5 ORM |
+| Search | Elasticsearch 8 (official client) |
+| Sending | Nodemailer (SMTP/Ethereal), HTTP adapters for Mailtrap / SendGrid / Resend |
+| Auth | Google Auth Platform (OAuth client + ID token verify), JWT (jsonwebtoken) |
+| Integrations | Slack OAuth, Slack `chat.postMessage` |
+| Frontend | Next.js 14 (App Router), React 18, Tailwind CSS, react-hot-toast |
+| Queue dashboards | Internal `/api/queue/stats` (BullMQ live counts) |
+| Deploy | Render (web service, static frontend export served by Express), Docker Compose for local infra |
+
+---
+
+## Architecture
 
 ```
 ┌──────────────────┐       ┌──────────────────────────────────────┐
 │  Next.js App     │  API  │  Express.js Backend                 │
-│  (Google OAuth,  │──────▶│  ┌──────────────────────────────┐   │
-│   dashboard)     │       │  │  /api/emails/schedule        │   │
-└──────────────────┘       │  │  /api/emails/scheduled|sent  │   │
-                           │  │  /api/emails/search          │   │
-                           │  │  /api/slack/*                │   │
-                           │  │  /api/queue/stats            │   │
-                           │  └──────────────┬───────────────┘   │
-                           │                 │                   │
-                           │        ┌────────▼────────┐          │
-                           │        │    PostgreSQL    │          │
-                           │        │   (Prisma ORM)   │          │
-                           │        └────────┬────────┘          │
-                           │                 │                   │
-┌──────────────────┐       │        ┌────────▼────────┐          │
-│  Elasticsearch   │◀──────│────────│   BullMQ Queue  │          │
-│  (index + search)│       │        │     + Redis     │          │
-└──────────────────┘       │        └────────┬────────┘          │
-                           │                 │                   │
-                           │        ┌────────▼────────┐          │
-                           │        │     Worker       │          │
-                           │        │  (concurrency=5)│          │
-                           │        └────────┬────────┘          │
-                           │                 │                   │
-                           │        ┌────────▼────────┐          │
-                           │        │   Ethereal SMTP  │          │
-                           │        │   (Nodemailer)   │          │
-                           │        └──────────────────┘          │
-                           │                 │                   │
-                           │        ┌────────▼────────┐          │
-                           │        │  Slack Notify   │          │
-                           │        │  (on rate limit)│          │
-                           │        └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────┘
+│  (Google OAuth,  │──────▶│  /api/auth/*   /api/emails/*         │
+│   dashboard,     │       │  /api/slack/*  /api/queue/stats      │
+│   compose)       │       │  ┌────────────▼─────────────────┐    │
+└──────────────────┘       │  │ mail provider abstraction     │    │
+                           │  │ smtp | mailtrap | sendgrid |  │    │
+                           │  │ resend                       │    │
+                           │  └────────────┬──────────────────┘    │
+                           │        ┌──────▼──────┐   ┌─────────┐  │
+                           │        │  PostgreSQL │   │ Elastic │  │
+                           │        │  (Prisma)   │   │ search  │  │
+                           │        └──────┬──────┘   └────┬────┘  │
+                           │        ┌──────▼──────────┐    │       │
+                           │        │ BullMQ + Redis  │────┘       │
+                           │        │ (delayed queue) │            │
+                           │        └──────┬──────────┘            │
+                           │        ┌──────▼──────┐   ┌─────────┐  │
+                           │        │   Worker    │──▶│  Slack  │  │
+                           │        └─────────────┘   └─────────┘  │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-### How Scheduling Works
-1. **`POST /api/emails/schedule`** receives subject, body, recipients, start time, delay, and sender.
-2. Each recipient becomes an `EmailJob` row in **PostgreSQL** (status `scheduled`, unique `idempotencyKey`).
-3. Each row is enqueued as a **BullMQ delayed job** with `delay = scheduledAt - now`. The delay is computed server-side so the exact send time is stored in the DB row `scheduledAt`.
-4. The **BullMQ QueueScheduler** promotes delayed jobs to the waiting queue at the right instant.
-5. The **Worker** picks the job → checks rate limits (Redis counters) → sends via Ethereal → updates DB + Elasticsearch.
-6. No cron anywhere — scheduling is purely BullMQ delayed jobs driven by the `scheduledAt` timestamp persisted in Postgres.
-
-### How Persistence On Restart Works
-- Every job's target send time lives in **PostgreSQL** (`EmailJob.scheduledAt`), not only in Redis.
-- On startup, the `recoverOrphanedJobs()` function queries all `scheduled`/`rate_limited` jobs from PostgreSQL. For each one, it checks whether the corresponding BullMQ job still exists in Redis. If not (e.g. Redis flushed or container restarted), the job is re-enqueued as a new BullMQ delayed job and the new `bullmqJobId` is saved back to the DB. Elasticsearch is also re-indexed.
-- The **worker checks DB state before sending**: if a job is already `sent` it is skipped, making restarts non-duplicating and non-restarting.
-- BullMQ delayed jobs are themselves persisted in Redis, which uses a persistent Docker volume (`redis_data`).
-
-### How Rate Limiting & Concurrency Are Implemented
-
-**Concurrency** — `WORKER_CONCURRENCY` env controls how many jobs the BullMQ worker processes in parallel. Default `5`. Logged at startup.
-
-**Minimum delay between emails** — `MIN_DELAY_BETWEEN_EMAILS_MS` (default **2000 ms / 2 seconds**). The worker enforces it by sleeping the configured delay after each successful send. Additionally the scheduling layer spaces out `scheduledAt` per recipient by the user-provided delay seconds.
-
-**Email per hour (Rate limiting)** — enforced with **Redis counters keyed by `hour_window + sender`** (and a global bucket too), both configurable:
-- `MAX_EMAILS_PER_HOUR` (global, default 200)
-- `MAX_EMAILS_PER_HOUR_PER_SENDER` (per sender, default 50)
-- The per-request `hourlyLimit` from the compose modal is passed through the BullMQ job data and overrides the per-sender default for that campaign.
-- key format: `ratelimit:sender:<sender>:<utc-hour-window>` and `ratelimit:global:<utc-hour-window>`, with 1h TTL.
-
-**When the hourly limit is reached**:
-- **Never dropped, never permanently failed.** The job is marked `rate_limited` in DB, its BullMQ job is re-scheduled into the next hour window (`delay = seconds until next UTC hour + jitter`), preserving original order as much as possible.
-- A **live Slack message** is posted to the connected Slack workspace via `chat.postMessage` (requires real Slack app + OAuth).
-- If Slack isn't connected, notification is skipped gracefully (no crash); connecting later starts notifications without redeploy.
-
-**Trade-offs** (documented honestly):
-- Redis counters are atomic (`INCR` / `EXPIRE`) so they're correct across multiple worker instances. A small race window exists between the check and a concurrent worker's increment, which is acceptable for email throttling but we note it could be tightened with `INCR`-now-check.
-- The per-worker BullMQ `limiter` is also enabled as a secondary in-memory cap; the Redis counter is the source of truth for the "next window" reschedule.
+**How scheduling works**
+1. `POST /api/emails/schedule` receives subject, body, recipients, start time, delay, hourly limit.
+2. Each recipient becomes an `EmailJob` row in Postgres (status `scheduled`, unique `idempotencyKey`).
+3. Each row is enqueued as a BullMQ **delayed job** with `delay = scheduledAt - now`.
+4. The **QueueScheduler** promotes delayed jobs to the waiting queue at the right instant.
+5. The **Worker** picks the job → checks rate limits (Redis counters) → sends via the selected provider → updates DB + Elasticsearch.
+6. **Restart-safe**: `recoverOrphanedJobs()` re-enqueues `scheduled`/`rate_limited` jobs that lost their Redis presence; worker checks DB state so nothing is sent twice.
 
 ---
 
-## 🛠 Setup
+## Quick start
 
 ### Prerequisites
 - Node.js 18+ and npm
-- Docker (for Postgres, Redis, Elasticsearch) — or run them natively
+- Docker Desktop (for Postgres, Redis, Elasticsearch)
 
-### 1. Infrastructure (Docker)
+### 1. Infrastructure
 ```bash
 docker compose up -d
 ```
-This starts:
-- **PostgreSQL** on `localhost:5432` (postgres/postgres, db `email_scheduler`)
-- **Redis** on `localhost:6379`
-- **Elasticsearch** on `localhost:9200`
 
 ### 2. Backend
-
 ```bash
 cd backend
 npm install
-cp .env.example .env
-npx prisma db push        # creates tables
-npx prisma generate       # generates client
-npm run dev               # starts API + scheduler + worker (single process)
+cp .env.example .env     # then fill in real values (Google OAuth, provider keys)
+npx prisma db push       # creates tables
+npx prisma generate
+npm run dev              # API + scheduler + worker in one process
 ```
 
-> ℹ️ Ethereal Email auto-creates a fresh SMTP account on first run if you leave `ETHEREAL_USER=PASS` as `auto_generated`. The credentials + preview URLs are printed to the console.
-
-> ⚙️ To also test the worker in a **separate process**, omit it from the API by using `npm run worker` in another terminal (the API starts the worker for simplicity; see Notes).
-
 ### 3. Frontend
-
 ```bash
 cd frontend
 npm install
 cp .env.local.example .env.local
-npm run dev               # http://localhost:3000
+npm run dev              # http://localhost:3000
 ```
 
-### 4. Google OAuth
-1. Create a project at https://console.cloud.google.com → **APIs & Services → Credentials**.
-2. Create an **OAuth client ID (Web)** → authorized JS origin `http://localhost:3000`.
-3. Put the client ID in **both** `backend/.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) and `frontend/.env.local` (`NEXT_PUBLIC_GOOGLE_CLIENT_ID`).
-4. If you don't configure Google, the frontend shows a **Developer Login** fallback.
+Then open http://localhost:3000 and sign in with Google.
 
-### 5. Slack (for rate-limit notifications)
-1. Create a Slack app at https://api.slack.com/apps.
-2. Add scopes: **`chat:write`**, redirect to `http://localhost:3000/api/slack/callback`.
-3. Put client ID/secret in `backend/.env` (`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`).
-4. In the dashboard, click **Connect Slack** → authorize → done.
+### Deploying on Render
+`render.yaml` at the repo root defines the web service (build: frontend static export + backend build; start: `node dist/index.js`). Sensitive env vars are `sync: false` with empty values — set them in the Render dashboard (**Environment** tab) and deploy:
+
+| Dashboard variable | Value |
+|---|---|
+| `GOOGLE_CLIENT_ID` | your `.apps.googleusercontent.com` client ID |
+| `GOOGLE_CLIENT_SECRET` | your OAuth secret |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | same client ID (baked at build — after changing, "Clear build cache & deploy") |
+| `JWT_SECRET` | long random string |
+| `DATABASE_URL` | managed Postgres DSN |
+| `REDIS_URL` | managed/TLS Redis URL |
+| `MAIL_PROVIDER` + provider key | e.g. `sendgrid` + `SENDGRID_API_KEY` |
 
 ---
 
-## 🔌 API Reference
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `4000` | API port |
+| `FRONTEND_URL` | `http://localhost:3000` | CORS + OAuth origin |
+| `JWT_SECRET` | dev default | Token signing secret |
+| `DATABASE_URL` | local postgres | Prisma DSN |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis (or `REDIS_URL` for TLS) |
+| `ELASTICSEARCH_URL` | `http://localhost:9200` | ES node |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth (backend) |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | — | Google OAuth (frontend, baked at build) |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
+| `MAIL_PROVIDER` | auto | `smtp | mailtrap | sendgrid | resend` |
+| `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated | SMTP/Ethereal credentials |
+| `MAILTRAP_API_TOKEN` / `MAILTRAP_SANDBOX_ID` | empty | Mailtrap HTTP API |
+| `SENDGRID_API_KEY` | empty | SendGrid HTTP API |
+| `RESEND_API_KEY` | empty | Resend HTTP API |
+| `MAX_EMAILS_PER_HOUR` | `200` | Global hourly cap |
+| `MAX_EMAILS_PER_HOUR_PER_SENDER` | `50` | Per-sender hourly cap |
+| `MIN_DELAY_BETWEEN_EMAILS_MS` | `2000` | Min gap between sends |
+| `WORKER_CONCURRENCY` | `5` | Parallel jobs per worker |
+
+---
+
+## Mail providers
+
+Out of the box the service can send through four providers behind one `sendEmail()` facade:
+
+| Provider | Config | Why use it |
+|---|---|---|
+| **smtp** (Ethereal) | `ETHEREAL_*` or any SMTP | Dev/testing; Ethereal auto-creates a preview account |
+| **mailtrap** | `MAILTRAP_API_TOKEN` + `MAILTRAP_SANDBOX_ID` | Safe inbox testing in a hosted env (HTTP, no outbound SMTP needed) |
+| **sendgrid** | `SENDGRID_API_KEY` | Real transactional delivery |
+| **resend** | `RESEND_API_KEY` | Real transactional delivery (simple API) |
+
+**Provider selection** — set `MAIL_PROVIDER` explicitly, otherwise auto-detect in order: SendGrid → Resend → Mailtrap → SMTP. Add a new provider by implementing one function:
+
+```ts
+type ProviderFn = (msg: EmailMessage) => Promise<SendResult>;
+```
+
+and registering it in the `providers` map in `backend/src/services/email.ts`.
+
+---
+
+## API reference
 
 ### Auth
-| Method | Route | Body | Description |
-|---|---|---|---|
-| POST | `/api/auth/google` | `{ idToken }` | Verify Google ID token, create/find user, return JWT |
-| POST | `/api/auth/dev-login` | `{ email?, name? }` | Dev-only login (disabled in production) |
-| GET | `/api/auth/me` | – | Current user profile |
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/auth/google` | Verify Google ID token, create/find user, return JWT |
+| POST | `/api/auth/dev-login` | Dev-only login (disabled in production) |
+| GET | `/api/auth/me` | Current user profile |
 
 ### Emails (JWT required)
-| Method | Route | Body / Query | Description |
-|---|---|---|---|
-| POST | `/api/emails/schedule` | `{ subject, body, recipients[], startTime, delayBetweenEmails, hourlyLimit, senderEmail? }` | Schedule N emails |
-| GET | `/api/emails/scheduled` | `?page&limit` | List scheduled/rate-limited emails |
-| GET | `/api/emails/sent` | `?page&limit` | List sent/failed emails |
-| GET | `/api/emails/search` | `?q` | Elasticsearch full-text search |
-| GET | `/api/emails/stats` | – | Counts (total, scheduled, sent, failed) |
-| DELETE | `/api/emails/:id` | – | Cancel a scheduled email |
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/emails/schedule` | `{ subject, body, recipients[], startTime, delayBetweenEmails, hourlyLimit, senderEmail? }` |
+| GET | `/api/emails/scheduled` | `?page&limit` |
+| GET | `/api/emails/sent` | `?page&limit` |
+| GET | `/api/emails/search` | `?q` (Elasticsearch) |
+| GET | `/api/emails/stats` | total/scheduled/sent/failed counts |
+| DELETE | `/api/emails/:id` | Cancel a scheduled email |
 
 ### Slack (JWT required)
 | Method | Route | Description |
 |---|---|---|
-| GET | `/api/slack/connect` | Returns Slack authorize URL |
+| GET | `/api/slack/connect` | Slack authorize URL |
 | POST | `/api/slack/callback` | `{ code }` → store token |
-| GET | `/api/slack/status` | Whether Slack is connected |
+| GET | `/api/slack/status` | Connected? |
 | DELETE | `/api/slack/disconnect` | Remove connection |
 
 ### Queue (JWT required)
@@ -198,109 +265,19 @@ npm run dev               # http://localhost:3000
 
 ---
 
-## 🧪 Behavior Under Load (1000+ emails)
-- 1000 emails → 1000 Postgres rows + 1000 BullMQ delayed jobs, spaced by the user-configured delay so they won't all fire at once.
-- The worker drains them at `concurrency` per run and honors `MIN_DELAY_BETWEEN_EMAILS_MS` between sends.
-- If the combined rate would exceed the hourly cap, the surplus jobs are **auto-rescheduled into the next hour window** instead of failing — so a 1000-email burst across an hour boundary completes without loss.
-- Full blast is safe against Ethereal (no real volume), but the logic and Redis counters are scale-ready.
+## How it helps
+
+- **Shows production-grade engineering**: persistence + idempotency + queue-based scheduling (no cron), rate limiting, search, notifications.
+- **Is deployable**: single-service Render config, static frontend export, health check, connectivity probe.
+- **Is extensible**: the provider interface makes adding real transactional email (SendGrid/Resend/SES) a one-function change; auth/scoping and webhooks prepare it for multi-tenancy.
+- **Is secure**: credentials policy is enforced (no secrets in git, dashboard-managed env vars), and the OAuth exposure was fully remediated.
 
 ---
 
-## 🔄 Restart Demo Scenario
-1. Schedule 3 emails at `+2 minutes`.
-2. Kill the server (`Ctrl+C`).
-3. `npm run dev` again.
-4. Watch the worker process the jobs 2 minutes later → they are **not** resent, **not** restarted from day 1; each fires exactly once at its `scheduledAt`.
+## Troubleshooting
 
----
-
-## ✅ Requirements Checklist
-
-**Backend**
-- [x] TS + Express API
-- [x] BullMQ + Redis scheduler (no cron — no `node-cron`, `agenda`, crontab)
-- [x] PostgreSQL persistence (Prisma)
-- [x] Ethereal SMTP sending (Nodemailer) with preview URLs
-- [x] Survives restart — future emails still fire, none resent
-- [x] Idempotency (unique keys + DB guards → no duplicate sends)
-- [x] Configurable worker concurrency
-- [x] Minimum delay between sends (default 2s)
-- [x] Per-sender + global hourly rate limit via Redis counters (configurable)
-- [x] Rate-limited jobs rescheduled to next window (never dropped)
-- [x] Slack OAuth connect/disconnect + live notification on rate-limit hit
-- [x] Elasticsearch indexing + search API
-
-**Frontend**
-- [x] Next.js + TypeScript + Tailwind
-- [x] Real Google OAuth login, name/email/avatar in header, logout
-- [x] Dashboard with stats + queue status
-- [x] Compose modal: subject, body, sender email, CSV/TXT upload + email count, start time, delay, hourly limit
-- [x] Scheduled table (loading + empty states, cancel)
-- [x] Sent table (loading + empty states)
-- [x] Search box backed by Elasticsearch
-- [x] Reusable components, DRY, typed props/responses
-- [x] Toast notifications, error handling
-
----
-
-## 📄 Environment Variables (Backend `.env`)
-
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/email_scheduler` | Postgres DSN |
-| `REDIS_URL` | empty | Managed/TLS Redis URL (hosted deploys); else uses `REDIS_HOST`/`REDIS_PORT` |
-| `ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch node |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Google OAuth |
-| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
-| `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated Ethereal | SMTP provider (used locally). Ethereal works fine in local dev. |
-| `MAILTRAP_API_TOKEN` / `MAILTRAP_SANDBOX_ID` | empty | **Use on hosted deploys (Render)** — Render blocks outbound SMTP (port 587), so sends go via the Mailtrap Sandbox HTTP API instead (works over 443). Emails land in your Mailtrap sandbox (like an Ethereal preview). Set the token from Sandboxes → API Tokens (enable **Email Sending**), and the sandbox ID from the sandbox's **Integration** tab (the number in `sandbox.smtp.mailtrap.io/{sandbox_id}`). |
-| `MAX_EMAILS_PER_HOUR` | `200` | Global hourly cap |
-| `MAX_EMAILS_PER_HOUR_PER_SENDER` | `50` | Per-sender hourly cap |
-| `MIN_DELAY_BETWEEN_EMAILS_MS` | `2000` | Min delay between sends |
-| `WORKER_CONCURRENCY` | `5` | Parallel jobs per worker |
-| `PORT` | `4000` | API port |
-| `FRONTEND_URL` | `http://localhost:3000` | Allowed CORS + OAuth redirect |
-| `JWT_SECRET` | dev default | Token signing secret |
-
----
-
-## 🚀 Hosting (single-service deploy)
-
-The app can run as **one** service: the Express backend both serves the `/api` routes **and** the statically-exported Next.js frontend, so there is a single origin and no CORS issues.
-
-- Frontend uses `output: "export"` (`next.config.js`) → produces `frontend/out/`.
-- The backend serves `frontend/out/` as static files and falls back to `index.html` for non-API GET routes (`backend/src/index.ts`).
-- `NEXT_PUBLIC_API_URL` can be **empty** → the browser calls same-origin `/api/*`.
-
-### Deploy (Render free tier)
-1. Sign up at **Neon** (Postgres) and **Upstash** (Redis). Copy the `DATABASE_URL` (postgres) and `REDIS_URL` (rediss://…, TLS).
-2. In Render: **New → Web Service** → connect this repo (root directory: repo root). A `render.yaml` is included with the build/start commands.
-3. Build: it runs `frontend` static build, then `backend` install + prisma generate + build.
-4. Start: `npm start` in `backend/` runs the compiled Express server (API + scheduler + worker + static frontend).
-5. Set env vars: `DATABASE_URL`, `REDIS_URL`, `FRONTEND_URL=true` (reflect origin), `JWT_SECRET`, and the Google OAuth vars.
-6. Add your Render URL to the Google OAuth client's **Authorized JavaScript origins**.
-
-> ⚠️ **Hosted trade-offs:** Elasticsearch and Slack are absent by default on a single free service (all their calls degrade gracefully and are logged, never fatal). On Render's free plan the service spins down after ~15 min idle and wakes on the next visit, so scheduled sends fire only while the service is awake — fine for demoing persistence, not for guaranteed background delivery.
-
-### Local development (unchanged)
-Run `npm run dev` in `backend/` and `frontend/` separately as described below.
-
----
-
-## 👥 Submission
-
-- **Repository**: private GitHub repo (monorepo: `backend/`, `frontend/`, `docker-compose.yml`)
-- **Access**: granted to `Mitrajit` and `Yadav036`
-- **Demo video**: `docs/demo-video.mp4` (or placeholder note) — shows compose, scheduled/sent tables, restart scenario, and rate-limit behavior
-- **Assumptions / shortcuts / trade-offs**: see *Architecture → Trade-offs* above
-
----
-
-## 🐛 Troubleshooting
-
-- **"Email sent to X: Connection timeout"** → outbound SMTP (port 587) is blocked on some hosts (definitely on Render free — the connectivity probe shows `TIMEOUT` while https works). Set `MAILTRAP_API_TOKEN` and sends go via the Mailtrap HTTPS API instead.
 - **"Redis connection error"** → is `docker compose up -d` running Redis?
 - **"Table X does not exist"** → run `npx prisma db push` in `backend/`.
-- **Elasticsearch down** → emails still work; only search + indexing are degraded (errors logged, not fatal).
-- **Google button not rendering** → set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in `frontend/.env.local` or use Developer Login.
-- **Slack notification not sending** → create the Slack app + grant `chat:write`, then reconnect in dashboard.
+- **Elasticsearch down** → emails still work; only search + indexing degrade (logged, non-fatal).
+- **Google button not rendering / `deleted_client`** → confirm `NEXT_PUBLIC_GOOGLE_CLIENT_ID` matches a live OAuth client, then rebuild the frontend (`next build` / "Clear build cache & deploy" on Render).
+- **HTTP mail provider chosen but no key set** → set `MAIL_PROVIDER=smtp` or the provider's API key.

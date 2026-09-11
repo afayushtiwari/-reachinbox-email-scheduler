@@ -4,6 +4,24 @@ import net from "net";
 import https from "https";
 import { config } from "../config";
 
+export interface EmailMessage {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+}
+
+export interface SendResult {
+  success: boolean;
+  messageId?: string;
+  previewUrl?: string;
+  error?: string;
+}
+
+export type EmailProvider = "smtp" | "mailtrap" | "sendgrid" | "resend";
+
+type ProviderFn = (msg: EmailMessage) => Promise<SendResult>;
+
 interface EtherealAccount {
   user: string;
   pass: string;
@@ -26,8 +44,8 @@ const lookupIPv4 = (
 
 export function probeConnectivity(): Promise<void> {
   console.log(
-    `Mail mode: ${config.httpMail.token ? "Mailtrap HTTP API" : "SMTP"}` +
-      (config.httpMail.token ? "" : ` (${config.smtp.host}:${config.smtp.port})`)
+    `Mail mode: provider=${resolveProvider()}` +
+      (config.smtp.host ? ` smtp=${config.smtp.host}:${config.smtp.port}` : "")
   );
   const { host, port } = config.smtp;
   return new Promise((resolve) => {
@@ -112,12 +130,7 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
   return transporter;
 }
 
-async function sendEmailViaMailtrap(options: {
-  from: string;
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<{ success: boolean; messageId?: string; previewUrl?: string; error?: string }> {
+async function mailtrapProvider(msg: EmailMessage): Promise<SendResult> {
   if (!config.httpMail.sandboxId) {
     const err = "MAILTRAP_SANDBOX_ID is not set (sandbox API requires /api/send/{sandbox_id})";
     console.error(err);
@@ -134,10 +147,10 @@ async function sendEmailViaMailtrap(options: {
           "User-Agent": "reachinbox-email-scheduler",
         },
         body: JSON.stringify({
-          from: { email: options.from },
-          to: [{ email: options.to }],
-          subject: options.subject,
-          html: options.html,
+          from: { email: msg.from },
+          to: [{ email: msg.to }],
+          subject: msg.subject,
+          html: msg.html,
         }),
         signal: AbortSignal.timeout(30000),
       });
@@ -145,7 +158,7 @@ async function sendEmailViaMailtrap(options: {
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 429 && attempt < 4) {
-        console.log(`Mailtrap rate limited (429), retrying ${options.to} in ${1000 * (attempt + 1)}ms...`);
+        console.log(`Mailtrap rate limited (429), retrying ${msg.to} in ${1000 * (attempt + 1)}ms...`);
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
         continue;
       }
@@ -159,7 +172,7 @@ async function sendEmailViaMailtrap(options: {
       }
 
       const messageId = Array.isArray((data as any).message_ids) ? (data as any).message_ids[0] : undefined;
-      console.log(`Email sent to ${options.to}: ${messageId || "ok"}`);
+      console.log(`Email sent to ${msg.to}: ${messageId || "ok"}`);
       return { success: true, messageId };
     }
 
@@ -169,28 +182,19 @@ async function sendEmailViaMailtrap(options: {
   }
 }
 
-export async function sendEmail(options: {
-  from: string;
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<{ success: boolean; messageId?: string; previewUrl?: string; error?: string }> {
-  if (config.httpMail.token) {
-    return sendEmailViaMailtrap(options);
-  }
-
+async function smtpProvider(msg: EmailMessage): Promise<SendResult> {
   try {
     const transport = await getTransporter();
 
     const info = await transport.sendMail({
-      from: options.from,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
+      from: msg.from,
+      to: msg.to,
+      subject: msg.subject,
+      html: msg.html,
     });
 
     const previewUrl = nodemailer.getTestMessageUrl(info);
-    console.log(`Email sent to ${options.to}: ${info.messageId}`);
+    console.log(`Email sent to ${msg.to}: ${info.messageId}`);
     if (previewUrl) {
       console.log(`Preview URL: ${previewUrl}`);
     }
@@ -201,10 +205,110 @@ export async function sendEmail(options: {
       previewUrl: previewUrl || undefined,
     };
   } catch (error: any) {
-    console.error(`Failed to send email to ${options.to}:`, error.message);
+    console.error(`Failed to send email to ${msg.to}:`, error.message);
     return {
       success: false,
       error: error.message,
     };
   }
+}
+
+async function sendgridProvider(msg: EmailMessage): Promise<SendResult> {
+  if (!config.sendgrid.apiKey) {
+    const err = "SENDGRID_API_KEY is not set";
+    console.error(err);
+    return { success: false, error: err };
+  }
+
+  try {
+    const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.sendgrid.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: msg.to }] }],
+        from: { email: msg.from },
+        subject: msg.subject,
+        content: [{ type: "text/html", value: msg.html }],
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      console.error(`SendGrid send failed: HTTP ${res.status} ${detail}`);
+      return { success: false, error: `SendGrid HTTP ${res.status}: ${detail}` };
+    }
+
+    const messageId = res.headers.get("x-message-id") || undefined;
+    console.log(`Email sent to ${msg.to}: ${messageId || "ok"}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function resendProvider(msg: EmailMessage): Promise<SendResult> {
+  if (!config.resend.apiKey) {
+    const err = "RESEND_API_KEY is not set";
+    console.error(err);
+    return { success: false, error: err };
+  }
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.resend.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: msg.from,
+        to: [msg.to],
+        subject: msg.subject,
+        html: msg.html,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const detail = (data as any).message || `HTTP ${res.status}`;
+      console.error(`Resend send failed: HTTP ${res.status} ${detail}`);
+      return { success: false, error: `Resend HTTP ${res.status}: ${detail}` };
+    }
+
+    const messageId = (data as any).id;
+    console.log(`Email sent to ${msg.to}: ${messageId || "ok"}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+const providers: Record<EmailProvider, ProviderFn> = {
+  smtp: smtpProvider,
+  mailtrap: mailtrapProvider,
+  sendgrid: sendgridProvider,
+  resend: resendProvider,
+};
+
+export function resolveProvider(): EmailProvider {
+  const explicit = config.mail.provider as EmailProvider;
+  if (explicit && providers[explicit]) return explicit;
+
+  if (config.sendgrid.apiKey) return "sendgrid";
+  if (config.resend.apiKey) return "resend";
+  if (config.httpMail.token) return "mailtrap";
+  return "smtp";
+}
+
+export async function sendEmail(message: EmailMessage): Promise<SendResult> {
+  const providerName = resolveProvider();
+  const provider = providers[providerName];
+
+  return provider(message);
 }

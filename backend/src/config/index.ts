@@ -45,6 +45,18 @@ export const config = {
       `https://sandbox.api.mailtrap.io/api/send/${process.env.MAILTRAP_SANDBOX_ID || ""}`,
   },
 
+  sendgrid: {
+    apiKey: process.env.SENDGRID_API_KEY || "",
+  },
+
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || "",
+  },
+
+  mail: {
+    provider: process.env.MAIL_PROVIDER || "",
+  },
+
   rateLimiting: {
     maxPerHourGlobal: parseInt(process.env.MAX_EMAILS_PER_HOUR || "200", 10),
     maxPerHourPerSender: parseInt(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || "50", 10),
