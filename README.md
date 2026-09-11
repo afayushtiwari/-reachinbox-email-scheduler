@@ -200,6 +200,7 @@ Then open http://localhost:3000 and sign in with Google.
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | — | Google OAuth (frontend, baked at build) |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | empty | Slack OAuth |
 | `MAIL_PROVIDER` | auto | `smtp | mailtrap | sendgrid | resend` |
+| `DEFAULT_FROM_EMAIL` | empty | From address used when scheduling omits a sender (use an authenticated domain) |
 | `ETHEREAL_HOST/PORT/USER/PASS` | auto-generated | SMTP/Ethereal credentials |
 | `MAILTRAP_API_TOKEN` / `MAILTRAP_SANDBOX_ID` | empty | Mailtrap HTTP API |
 | `SENDGRID_API_KEY` | empty | SendGrid HTTP API |
@@ -229,6 +230,28 @@ type ProviderFn = (msg: EmailMessage) => Promise<SendResult>;
 ```
 
 and registering it in the `providers` map in `backend/src/services/email.ts`.
+
+---
+
+## Sender authentication & deliverability
+
+Emails sent through a real provider (SendGrid/Resend) only reach the **Inbox** if the "From" address is authenticated. Sending from a free address (`@gmail.com`) with no domain proof gets flagged as spam. To fix:
+
+1. **Own a domain** (e.g. `yourdomain.com`) — any registrar works.
+2. **Authenticate it** in SendGrid: **Settings → Sender Authentication → Authenticate Domain** and follow the DNS step. SendGrid will ask for 2–3 records — typically:
+   - a **CNAME** record for link branding (e.g. `send. → u12345.wl.sendgrid.net`)
+   - a **CNAME** for DKIM (e.g. `s1._domainkey → s1.domainkey.u12345.wl.sendgrid.net`)
+   - (SPF is auto-managed once the CNAMEs resolve)
+   Add these at your DNS provider, then click "Verify" in SendGrid (records can take up to 48h).
+3. **Create a sender on that domain** in SendGrid and set it as the app default:
+   ```
+   DEFAULT_FROM_EMAIL=noreply@yourdomain.com
+   MAIL_PROVIDER=sendgrid
+   ```
+   `DEFAULT_FROM_EMAIL` is used whenever the compose flow doesn't specify a sender (`backend/src/routes/emails.ts`).
+4. **Re-send** from that address — mail lands in the Inbox with SPF/DKIM passed.
+
+Warm-up: start with a handful of sends to your own addresses, open/reply/star them, and scale volume slowly over ~2 weeks to build sender reputation. Typical causes of continued spam-folder placement are an unauthenticated domain, a cold/new sender, or spammy content (links, "free", all-caps subject).
 
 ---
 
@@ -272,6 +295,29 @@ and registering it in the `providers` map in `backend/src/services/email.ts`.
 - **Is deployable**: single-service Render config, static frontend export, health check, connectivity probe.
 - **Is extensible**: the provider interface makes adding real transactional email (SendGrid/Resend/SES) a one-function change; auth/scoping and webhooks prepare it for multi-tenancy.
 - **Is secure**: credentials policy is enforced (no secrets in git, dashboard-managed env vars), and the OAuth exposure was fully remediated.
+- **Is verified**: unit + integration tests cover provider selection, rate limiting and the send facade, and GitHub Actions CI runs tests + builds on every push.
+
+---
+
+## Testing
+
+Backend tests use [Vitest](https://vitest.dev) (no infrastructure required — Redis is mocked):
+
+```bash
+cd backend
+npm test          # run once
+npm run test:watch
+```
+
+What's covered:
+
+| File | Covers |
+|---|---|
+| `tests/provider-selection.test.ts` | `selectProvider()` auto-detect + explicit override, priority order, smtp fallback |
+| `tests/rate-limiter.test.ts` | global + per-sender hourly caps enforced with mocked Redis, counter rollback, window math |
+| `tests/send-email.test.ts` | SendGrid/Resend adapters (success + error responses) and `sendEmail()` facade dispatch |
+
+CI runs these plus both production builds on every push/PR (`.github/workflows/ci.yml`).
 
 ---
 

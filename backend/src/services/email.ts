@@ -130,7 +130,7 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
   return transporter;
 }
 
-async function mailtrapProvider(msg: EmailMessage): Promise<SendResult> {
+export async function mailtrapProvider(msg: EmailMessage): Promise<SendResult> {
   if (!config.httpMail.sandboxId) {
     const err = "MAILTRAP_SANDBOX_ID is not set (sandbox API requires /api/send/{sandbox_id})";
     console.error(err);
@@ -182,7 +182,7 @@ async function mailtrapProvider(msg: EmailMessage): Promise<SendResult> {
   }
 }
 
-async function smtpProvider(msg: EmailMessage): Promise<SendResult> {
+export async function smtpProvider(msg: EmailMessage): Promise<SendResult> {
   try {
     const transport = await getTransporter();
 
@@ -213,7 +213,7 @@ async function smtpProvider(msg: EmailMessage): Promise<SendResult> {
   }
 }
 
-async function sendgridProvider(msg: EmailMessage): Promise<SendResult> {
+export async function sendgridProvider(msg: EmailMessage): Promise<SendResult> {
   if (!config.sendgrid.apiKey) {
     const err = "SENDGRID_API_KEY is not set";
     console.error(err);
@@ -250,7 +250,7 @@ async function sendgridProvider(msg: EmailMessage): Promise<SendResult> {
   }
 }
 
-async function resendProvider(msg: EmailMessage): Promise<SendResult> {
+export async function resendProvider(msg: EmailMessage): Promise<SendResult> {
   if (!config.resend.apiKey) {
     const err = "RESEND_API_KEY is not set";
     console.error(err);
@@ -296,14 +296,28 @@ const providers: Record<EmailProvider, ProviderFn> = {
   resend: resendProvider,
 };
 
-export function resolveProvider(): EmailProvider {
-  const explicit = config.mail.provider as EmailProvider;
+export function selectProvider(opts: {
+  explicit?: string;
+  sendgridKey?: string;
+  resendKey?: string;
+  mailtrapToken?: string;
+}): EmailProvider {
+  const explicit = opts.explicit as EmailProvider;
   if (explicit && providers[explicit]) return explicit;
 
-  if (config.sendgrid.apiKey) return "sendgrid";
-  if (config.resend.apiKey) return "resend";
-  if (config.httpMail.token) return "mailtrap";
+  if (opts.sendgridKey) return "sendgrid";
+  if (opts.resendKey) return "resend";
+  if (opts.mailtrapToken) return "mailtrap";
   return "smtp";
+}
+
+export function resolveProvider(): EmailProvider {
+  return selectProvider({
+    explicit: config.mail.provider,
+    sendgridKey: config.sendgrid.apiKey,
+    resendKey: config.resend.apiKey,
+    mailtrapToken: config.httpMail.token,
+  });
 }
 
 export async function sendEmail(message: EmailMessage): Promise<SendResult> {

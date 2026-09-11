@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { AuthRequest } from "../types";
 import { authMiddleware } from "../middleware/auth";
 import prisma from "../services/prisma";
+import { config } from "../config";
 import { addScheduledEmailJob, removeScheduledJob } from "../services/bullmq";
 import { searchEmails, indexEmailJob } from "../services/elasticsearch";
 
@@ -24,7 +25,7 @@ router.post("/schedule", async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const sender = senderEmail || req.user!.email;
+    const sender = senderEmail || config.mail.defaultFrom || req.user!.email;
     const startDate = new Date(startTime);
     if (isNaN(startDate.getTime()) || startDate.getTime() < Date.now()) {
       res.status(400).json({ error: "startTime must be a valid future date" });

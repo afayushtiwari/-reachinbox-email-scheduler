@@ -55,6 +55,7 @@ export const config = {
 
   mail: {
     provider: process.env.MAIL_PROVIDER || "",
+    defaultFrom: process.env.DEFAULT_FROM_EMAIL || "",
   },
 
   rateLimiting: {
