@@ -76,12 +76,13 @@ An OAuth client secret found in a public repo lets anyone impersonate your app's
 Suggested order of attack to take this from assignment to product:
 
 1. **Mail provider abstraction** — done. SendGrid/Resend/SMTP/Mailtrap behind one interface.
-2. **Templates + variables** (`{{firstName}}`, `{{link}}`) with react-email/MJML editor — makes it usable for marketing sends.
-3. **Webhooks + REST API keys** — external eventing (scheduled/sent/failed) and programmatic scheduling.
-4. **Workspaces/orgs with roles** — multi-tenant, sellable.
-5. **Recurring schedules** — daily/weekly digests via repeatable BullMQ jobs (still no cron).
-6. **Analytics** — open/click tracking pixel, best-time-to-send, deliverability reports.
-7. **Auto-sequences / drips** and audience segments/tags.
+2. **Sender authentication & deliverability** — currently sending from a free address without domain auth, so recipients may get mail in Spam. Fix: authenticate a real domain in SendGrid (add SPF/DKIM/CNAME at the registrar), send from `noreply@yourdomain.com`, and warm up sender reputation before scaling volume.
+3. **Templates + variables** (`{{firstName}}`, `{{link}}`) with react-email/MJML editor — makes it usable for marketing sends.
+4. **Webhooks + REST API keys** — external eventing (scheduled/sent/failed) and programmatic scheduling.
+5. **Workspaces/orgs with roles** — multi-tenant, sellable.
+6. **Recurring schedules** — daily/weekly digests via repeatable BullMQ jobs (still no cron).
+7. **Analytics** — open/click tracking pixel, best-time-to-send, deliverability reports.
+8. **Auto-sequences / drips** and audience segments/tags.
 
 ---
 
