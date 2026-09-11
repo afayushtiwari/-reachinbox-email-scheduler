@@ -182,8 +182,36 @@ router.get("/search", async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const results = await searchEmails(userId, q, page, limit);
-    res.json(results);
+    const esResults = await searchEmails(userId, q, page, limit);
+
+    // Fall back to PostgreSQL LIKE search when Elasticsearch is unavailable
+    // or returns no matches (e.g. ES not deployed in the hosting environment).
+    if (esResults.total > 0) {
+      res.json(esResults);
+      return;
+    }
+
+    const where = {
+      userId,
+      OR: [
+        { recipientEmail: { contains: q, mode: "insensitive" as const } },
+        { senderEmail: { contains: q, mode: "insensitive" as const } },
+        { subject: { contains: q, mode: "insensitive" as const } },
+        { body: { contains: q, mode: "insensitive" as const } },
+      ],
+    };
+
+    const [emails, total] = await Promise.all([
+      prisma.emailJob.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.emailJob.count({ where }),
+    ]);
+
+    res.json({ hits: emails, total });
   } catch (error: any) {
     console.error("Search emails error:", error);
     res.status(500).json({ error: "Failed to search emails" });
